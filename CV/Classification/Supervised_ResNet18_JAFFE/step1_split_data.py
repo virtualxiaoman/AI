@@ -4,7 +4,7 @@ import shutil
 
 if __name__ == '__main__':
     # 对应其中类别
-    classes = ['NE','HA','AN','DI','FE','SA','SU']
+    classes = ['NE', 'HA', 'AN', 'DI', 'FE', 'SA', 'SU']
     folder_names = ['train', 'test']
     # 未划分的数据集地址
     src_data_folder = "../../../Datasets/JAFFE/jaffe"
@@ -41,7 +41,7 @@ if __name__ == '__main__':
         # 得到原图片目录地址
         src_img_path = os.path.join(src_data_folder, file)
         # 如果训练集中该类别个数未达划分数量，则复制图片并分配进入训练集
-        if class_train[file[3:5]] < class_sum[file[3:5]]*train_scale:
+        if class_train[file[3:5]] < class_sum[file[3:5]] * train_scale:
             target_img_path = os.path.join(os.path.join(target_data_folder, 'train'), file[3:5])
             shutil.copy2(src_img_path, target_img_path)  # 复制图片从src_img_path到target_img_path
             class_train[file[3:5]] += 1

@@ -1,199 +1,126 @@
-# train_arcface.py
-import math
 import random
+from typing import Tuple
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, Subset
-from torchvision import models, transforms, datasets
-from tqdm import tqdm
+from torchvision import transforms, datasets, models
 
 from Utils.loss_fn import ArcFaceLoss
 from Utils.train_net import NetTrainerArcFace
 
 
-class EmbeddingNet(nn.Module):
-    def __init__(self, embedding_dim=256, pretrained=True):
-        super().__init__()
-        backbone = models.resnet18(weights=models.ResNet18_Weights.IMAGENET1K_V1 if pretrained else None)
-        backbone.fc = nn.Identity()
-        self.backbone = backbone
-        self.embedding = nn.Linear(512, embedding_dim)
-        nn.init.xavier_uniform_(self.embedding.weight)
+def per_class_split(dataset: datasets.ImageFolder, val_ratio: float = 0.2, seed: int = 42) -> Tuple[list, list]:
+    """
+    Return (train_indices, val_indices) splitting indices of the ImageFolder dataset such that
+    for each class the split ratio is approximately val_ratio.
+    """
+    random.seed(seed)
+    targets = dataset.targets  # list of class indices per sample
+    class_to_indices = {}
+    for idx, cls in enumerate(targets):
+        class_to_indices.setdefault(cls, []).append(idx)
 
-    def forward(self, x):
-        x = self.backbone(x)  # [B, 512]
-        x = self.embedding(x)  # [B, D]
-        x = F.normalize(x, p=2, dim=1)  # L2 normalize embeddings (important)
+    train_idx, val_idx = [], []
+    for cls, idxs in class_to_indices.items():
+        n = len(idxs)
+        n_val = max(1, int(round(n * val_ratio)))  # ensure at least 1 sample in val if possible
+        shuffled = idxs.copy()
+        random.shuffle(shuffled)
+        val_subset = shuffled[:n_val]
+        train_subset = shuffled[n_val:]
+        # if class is tiny and train becomes empty, move one from val to train
+        if len(train_subset) == 0 and len(val_subset) > 1:
+            train_subset.append(val_subset.pop())
+        train_idx.extend(train_subset)
+        val_idx.extend(val_subset)
+    return train_idx, val_idx
+
+
+class ResNet18Embedding(nn.Module):
+    """
+    ResNet-18 backbone for embedding extraction.
+    Output: (B, embedding_dim)
+    """
+
+    def __init__(self, embedding_dim: int = 512):
+        super().__init__()
+        self.backbone = models.resnet18(weights=models.ResNet18_Weights.IMAGENET1K_V1)
+        in_feat = self.backbone.fc.in_features
+        self.backbone.fc = nn.Linear(in_feat, embedding_dim)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        x: (B, 3, H, W)
+        return: (B, embedding_dim)
+        """
+        x = self.backbone(x)  # [B, embedding_dim]
+        x = F.normalize(x, p=2, dim=1)  # L2 normalize embeddings (important for ArcFace)
         return x
 
 
-#
-# # ---------------- Utilities: retrieval recall@1 ----------------
-# @torch.no_grad()
-# def compute_recall_at_1(embeddings, labels):
-#     """
-#     embeddings: [N, D] normalized
-#     labels: [N]
-#     Return recall@1 (nearest neighbor excluding self).
-#     """
-#     device = embeddings.device
-#     # cosine similarity matrix
-#     sims = embeddings @ embeddings.t()  # [N, N]
-#     N = sims.size(0)
-#     # mask self
-#     sims.fill_diagonal_(-1.0)
-#     # top-1 index
-#     top1 = sims.argmax(dim=1)  # [N]
-#     preds = labels[top1]
-#     correct = (preds == labels).sum().item()
-#     return correct / N
-#
-# # ---------------- Training & Validation loops ----------------
-# def train_one_epoch(model, loss_fn, train_loader, optimizer, device):
-#     model.train()
-#     loss_fn.train()
-#     running_loss = 0.0
-#     total = 0
-#     correct = 0  # using logits top1 as proxy
-#     for imgs, labels in tqdm(train_loader, desc="Train", leave=False):
-#         imgs = imgs.to(device)
-#         labels = labels.to(device).long()
-#         embeddings = model(imgs)               # [B, D] normalized
-#         loss, logits = loss_fn(embeddings, labels)
-#
-#         optimizer.zero_grad()
-#         loss.backward()
-#         optimizer.step()
-#
-#         running_loss += loss.item() * imgs.size(0)
-#         total += imgs.size(0)
-#         preds = logits.argmax(dim=1)
-#         correct += (preds == labels).sum().item()
-#     return running_loss / total, correct / total
-#
-# @torch.no_grad()
-# def validate(model, arcface, val_loader, device):
-#     model.eval()
-#     arcface.eval()
-#     total = 0
-#     loss_sum = 0.0
-#     correct = 0
-#     # first compute logits-based top1
-#     for imgs, labels in tqdm(val_loader, desc="Val", leave=False):
-#         imgs = imgs.to(device)
-#         labels = labels.to(device).long()
-#         embeddings = model(imgs)
-#         loss, logits = arcface(embeddings, labels)
-#         loss_sum += loss.item() * imgs.size(0)
-#         total += imgs.size(0)
-#         preds = logits.argmax(dim=1)
-#         correct += (preds == labels).sum().item()
-#
-#     # compute retrieval recall@1 using the whole validation set embeddings
-#     all_embeddings = []
-#     all_labels = []
-#     for imgs, labels in val_loader:
-#         imgs = imgs.to(device)
-#         emb = model(imgs)  # normalized
-#         all_embeddings.append(emb.cpu())
-#         all_labels.append(labels)
-#     all_embeddings = torch.cat(all_embeddings, dim=0)
-#     all_labels = torch.cat(all_labels, dim=0)
-#     recall1 = compute_recall_at_1(all_embeddings, all_labels)
-#
-#     return loss_sum / total, correct / total, recall1
-
-
 def main():
-    all_path = "../../../Datasets/ATTfaces/raw"
-    train_path = "../../../Datasets/ATTfaces/split/train"
-    test_path = "../../../Datasets/ATTfaces/split/test"
-    embedding_dim = 256
+    data_root = "../../../Datasets/ATTfaces/raw"
+    epochs = 50
     batch_size = 64
-    epochs = 30
-    lr = 0.005  # SGD recommended; if use Adam, reduce (1e-4)
-    weight_decay = 5e-4
+    lr = 0.01
+    weight_decay = 1e-4
+    embedding_dim = 512
     s = 30.0
     m = 0.5
-    use_pretrained = True
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    val_ratio = 0.2
+    num_workers = 4
 
-    transform = transforms.Compose([
-        transforms.Resize((224, 224)),
+    train_transform = transforms.Compose([
+        transforms.RandomResizedCrop(224, scale=(0.8, 1.0)),
+        transforms.RandomHorizontalFlip(),
+        transforms.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.05),
         transforms.ToTensor(),
-        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                             std=[0.229, 0.224, 0.225]),
     ])
-    full_loader = datasets.ImageFolder(all_path, transform=transform)
-    print("classes:", full_loader.classes)  # ['s1' ~ 's40']
-    num_classes = len(full_loader.classes)
-    train_names = [f"s{i}" for i in range(1, 31)]  # 's1'..'s30'
-    test_names = [f"s{i}" for i in range(31, 41)]
-    print("train_names: ", train_names)
-    print("test_names: ", test_names)
-    train_idx, test_idx = [], []
-    for i, (path, class_idx) in enumerate(full_loader.samples):
-        name = full_loader.classes[class_idx]
-        if name in train_names:
-            train_idx.append(i)
-            # print("train: ", train_idx, i, path, name)
-        elif name in test_names:
-            test_idx.append(i)
-            # print("test: ", test_idx, i, path, name)
+    val_transform = transforms.Compose([
+        transforms.Resize(256),
+        transforms.CenterCrop(224),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                             std=[0.229, 0.224, 0.225]),
+    ])
 
-    train_ds = Subset(full_loader, train_idx)
-    test_ds = Subset(full_loader, test_idx)
+    full_dataset = datasets.ImageFolder(str(data_root))
+    num_classes = len(full_dataset.classes)
+    print(f"Found {len(full_dataset)} images of {num_classes} classes in {data_root}")
 
-    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=4)
-    test_loader = DataLoader(test_ds, batch_size=batch_size, shuffle=False, num_workers=4)
-    # train_ds = datasets.ImageFolder(train_path, transform=transform)
-    # test_ds = datasets.ImageFolder(test_path, transform=transform)
-    # num_classes = len(train_ds.classes)
-    # print(f"num_classes: {num_classes}")
-    # train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=4, pin_memory=True)
-    # val_loader = DataLoader(test_ds, batch_size=batch_size, shuffle=False, num_workers=4, pin_memory=True)
+    train_idx, val_idx = per_class_split(full_dataset, val_ratio=val_ratio, seed=42)
+    train_dataset = Subset(datasets.ImageFolder(str(data_root), transform=train_transform), train_idx)
+    val_dataset = Subset(datasets.ImageFolder(str(data_root), transform=val_transform), val_idx)
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers)
+    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
 
-    model = EmbeddingNet(embedding_dim=embedding_dim, pretrained=use_pretrained).to(device)
-    loss_fn = ArcFaceLoss(num_classes=num_classes, embedding_dim=embedding_dim, s=s, m=m).to(device)
-    optimizer = torch.optim.SGD(list(model.parameters()) + list(loss_fn.parameters()),
+    net = ResNet18Embedding(embedding_dim=embedding_dim)
+    loss_fn = ArcFaceLoss(num_classes=num_classes, embedding_dim=embedding_dim, s=s, m=m, easy_margin=False)
+    optimizer = torch.optim.SGD(list(net.parameters()) + list(loss_fn.parameters()),
                                 lr=lr, momentum=0.9, weight_decay=weight_decay)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
 
     trainer = NetTrainerArcFace(
-        net=model,
+        net=net,
         train_loader=train_loader,
-        test_loader=test_loader,
+        test_loader=val_loader,
         loss_fn=loss_fn,
         optimizer=optimizer,
         scheduler=scheduler,
         epochs=epochs,
-        device=device,
-        eval_interval=1,
-        eval_type='acc'
+        eval_type='acc',
+        eval_interval=1
     )
-    trainer.train_net(net_save_path="../../../Models/ATTfaces/arcface_model.pth")
-
-    # # ---------- training loop ----------
-    # best_recall1 = 0.0
-    # for epoch in range(1, epochs+1):
-    #     train_loss, train_acc = train_one_epoch(model, loss_fn, train_loader, optimizer, device)
-    #     val_loss, val_acc, val_recall1 = validate(model, loss_fn, val_loader, device)
-    #     scheduler.step()
-    #
-    #     print(f"Epoch {epoch}/{epochs}  TrainLoss: {train_loss:.4f} TrainAcc(top1): {train_acc:.4f} "
-    #           f"ValLoss: {val_loss:.4f} ValAcc(top1): {val_acc:.4f} ValRecall@1: {val_recall1:.4f}")
-    #
-    #     # save best
-    #     if val_recall1 > best_recall1:
-    #         best_recall1 = val_recall1
-    #         torch.save({
-    #             'epoch': epoch,
-    #             'model_state': model.state_dict(),
-    #             'arcface_state': loss_fn.state_dict(),
-    #             'optimizer': optimizer.state_dict()
-    #         }, "best_arcface_checkpoint.pth")
-    #         print("Saved best checkpoint.")
+    trainer.train_net(net_save_path="../../../Models/ATTfaces/resnet18_arcface.pth")
 
 
 if __name__ == "__main__":
     main()
+    # Epoch 49/50, Train Loss: 0.000291, Train Acc: 1.000000, Test Acc: 1.000000, Time: 4.00s, LR: 0.000010, GPU: 设备0：U0.05+R1.50/T15.92GB
+    # Epoch 50/50, Train Loss: 0.000197, Train Acc: 1.000000, Test Acc: 1.000000, Time: 3.86s, LR: 0.000000, GPU: 设备0：U0.05+R1.50/T15.92GB
+    # >>> [train_net] (*^w^*) Congratulations！训练结束，总共花费时间: 181.29072618484497秒
+    # [train_net] 最佳结果 epoch = 11, acc = 1.0

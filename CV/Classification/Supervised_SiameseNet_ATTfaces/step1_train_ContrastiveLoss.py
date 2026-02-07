@@ -65,6 +65,7 @@ class SiameseNet(nn.Module):
     def forward(self, x1, x2):
         return self.forward_once(x1), self.forward_once(x2)
 
+
 def main():
     transform = transforms.Compose([
         transforms.Resize((224, 224)),

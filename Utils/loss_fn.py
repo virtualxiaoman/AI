@@ -123,9 +123,8 @@ class ArcFaceLoss(nn.Module):
 
         device = embeddings.device
         labels = labels.to(device)
-
         W = F.normalize(self.weight, p=2, dim=1)  # [C, D]，L2归一化，保证内积直接等于余弦值
-
+        W = W.to(device)
         cos_theta = torch.matmul(embeddings, W.t())  # cos𝜃_j: [B, C]
         cos_theta = cos_theta.clamp(-1.0 + self.eps, 1.0 - self.eps)  # for numerical stability
         sin_theta = torch.clamp(1.0 - cos_theta.pow(2), min=0.0, max=1.0)

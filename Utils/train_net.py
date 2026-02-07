@@ -70,7 +70,7 @@ class NetTrainerFNN:
         # 网络参数
         self.net = net.to(self.device)
         # self.net = torch.compile(self.net)  # RuntimeError: Windows not yet supported for torch.compile 哈哈哈！
-        self.loss_fn = loss_fn
+        self.loss_fn = loss_fn.to(self.device)
         self.optimizer = optimizer
 
         # 训练参数
@@ -787,7 +787,7 @@ class NetTrainerArcFace(NetTrainerFNN):
             for X, y in loader:
                 X, y = X.to(self.device), y.to(self.device).long()
                 outputs = self.net(X)
-                _, logits = self.loss_fn(outputs, y)
+                logits = self.loss_fn.get_logits(outputs)  # 直接获取 logits 用于评估
                 preds = logits.argmax(dim=1)
                 # if data_type == "train":
                 #     print("Train batch")
