@@ -1,53 +1,33 @@
-# 方案A：llama-cpp-python multimodal 使用（按官方 docs 示例格式）
-import base64, io
-from PIL import Image
-from llama_cpp import Llama
+import torch
+import os
 
+print(f"PyTorch 版本: {torch.__version__}")
+print(f"PyTorch 是否可用 CUDA? {torch.cuda.is_available()}")
+if torch.cuda.is_available():
+    print(f"PyTorch CUDA 版本: {torch.version.cuda}")
+    print(f"PyTorch 检测到的 GPU 数量: {torch.cuda.device_count()}")
+    if torch.cuda.device_count() > 0:
+        print(f"当前 GPU 型号 (PyTorch): {torch.cuda.get_device_name(0)}")
 
-def image_to_data_uri(path):
-    with open(path, "rb") as f:
-        b64 = base64.b64encode(f.read()).decode("ascii")
-    return f"data:image/png;base64,{b64}"
+print("\n尝试导入 Llama...")
+try:
+    from llama_cpp import Llama
+    print("Llama 导入成功！")
+    # 更全面的测试需加载模型并设置 n_gpu_layers > 0
+    # llm = Llama(model_path="您的模型路径.gguf", n_gpu_layers=30) 
+    # print("Llama 对象已初始化（这将测试实际 GPU 卸载）")
+    model_path = r"G:/Models/MM/ImgToText/NuMarkdown-8B-Thinking-Q4_K_M.gguf"
+    llm = Llama(
+        model_path=model_path,
+        n_gpu_layers=50,
+        n_ctx=2048,
+        verbose=True
+    )
+    print("CUDA支持:", llm.params.n_gpu_layers > 0)
+except Exception as e:
+    print(f"导入或初始化 Llama 出错: {e}")
 
+print("\n从 Python 环境检查 CMAKE_ARGS:")
+print(f"CMAKE_ARGS: {os.environ.get('CMAKE_ARGS')}") 
 
-model_path = r"G:/Models/MM/ImgToText/NuMarkdown-8B-Thinking-Q4_K_M.gguf"
-llm = Llama(
-    model_path=model_path,
-    n_ctx=4096,
-    # verbose=True,  # 可打开查看选用的 chat_format / 调试信息
-)
-
-data_uri = image_to_data_uri(
-    r"G:/AAA重要文档、证书、照片、密钥/竞赛获奖证书 汇总备份处/中国大学生计算机设计大赛/中国大学生计算机设计大赛省级一等奖.png")
-
-messages = [
-    {"role": "system",
-     "content": "You are an assistant that extracts all visible text from the image. Only output the raw text."},
-    {
-        "role": "user",
-        "content": [
-            {"type": "image_url", "image_url": {"url": data_uri}},
-            {"type": "text", "text": "请将图片中包含的所有文字尽可能完整准确地列出，保持原格式（不要添加其它评论）。"}
-        ],
-    }
-]
-
-# 设置 temperature=0 更确定性；注意增加 max_tokens 以免被截断
-response = llm.create_chat_completion(messages=messages, temperature=0.0, max_tokens=4096)
-
-# 调试时先打印整个 response，查看实际返回结构
-import json
-
-print(json.dumps(response, ensure_ascii=False, indent=2))
-
-# 常见的取法（根据你看到的 response 结构选择）
-choice = response["choices"][0]
-# 有的版本返回 .get("text")，有的返回 message.content
-print("----可能的输出字段----")
-if "text" in choice:
-    print(choice["text"])
-elif "message" in choice and "content" in choice["message"]:
-    print(choice["message"]["content"])
-else:
-    # 保险打印
-    print(choice)
+quit()
