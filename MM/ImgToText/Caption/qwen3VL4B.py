@@ -1,11 +1,15 @@
-import torch
 import re
+import os
+import io
+import torch
 from transformers import Qwen3VLForConditionalGeneration, AutoProcessor
 from PIL import Image
-from typing import List, Tuple, Union, Optional
+from typing import List, Tuple, Union, Optional, Set
 
 
 class QwenVLInferencer:
+    IMAGE_EXTENSIONS: Set[str] = {'.jpg', '.jpeg', '.png', '.bmp', '.webp', '.tiff', '.gif'}
+
     def __init__(self, model_path="Qwen/Qwen3-VL-4B-Thinking", device="auto", do_sample=False, temperature=0.7,
                  top_p=0.9, repetition_penalty=1.05, response_max_tokens=2048, max_retries=1):
         """
@@ -31,6 +35,50 @@ class QwenVLInferencer:
 
         self.found_closing = False
         self.retry_prompt = "请基于上面的思考直接给出最终答案。不要重复上面的思考内容，直接给出最终回复。"
+
+    def _preprocess_image(self, img_input: Union[str, Image.Image], max_pixels: int = 1000000) -> Image.Image:
+        """
+        预处理图片：支持路径或PIL对象，若总像素超过阈值则按比例缩放。
+        max_pixels: 默认 1,000,000 (约等于 1024x1024)
+        """
+        # 1. 加载图片
+        if isinstance(img_input, str):
+            if not any(img_input.lower().endswith(ext) for ext in self.IMAGE_EXTENSIONS):
+                raise ValueError(f"不支持的文件格式: {os.path.splitext(img_input)[1]}")
+            img = Image.open(img_input)
+        else:
+            img = img_input
+
+        # 统一转为 RGB
+        if img.mode != 'RGB':
+            img = img.convert('RGB')
+
+        # 2. 基于像素总量进行动态缩放
+        w, h = img.size
+        current_pixels = w * h
+
+        if current_pixels > max_pixels:
+            # 计算缩放比例：我们要让 (w*s) * (h*s) = max_pixels
+            # 所以 s^2 = max_pixels / (w*h) -> s = sqrt(max_pixels / current_pixels)
+            scale = (max_pixels / current_pixels) ** 0.5
+
+            new_w = int(w * scale)
+            new_h = int(h * scale)
+
+            # Qwen-VL 建议长宽最好是 28 的倍数以获得最佳对齐效果（可选优化）
+            new_w = (new_w // 28) * 28
+            new_h = (new_h // 28) * 28
+
+            # 兜底：防止缩太小变成 0
+            new_w = max(new_w, 28)
+            new_h = max(new_h, 28)
+
+            img = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
+            print(f"检测到高分辨率图片 ({w}x{h}), 已按比例缩放至 {new_w}x{new_h}")
+        # else:
+            # print(f"图片尺寸为 {w}x{h}, 无需缩放。")
+
+        return img
 
     def _parse_output(self, raw_output):
         """
@@ -59,7 +107,7 @@ class QwenVLInferencer:
 
         return thinking_content, response_content.strip()
 
-    def generate_output(self, img_path, prompt, max_new_tokens=None):
+    def generate_output(self, img, prompt, max_new_tokens=None):
         """
         执行推理。
         可以改为：
@@ -67,7 +115,7 @@ class QwenVLInferencer:
         return thinking, response
 
         Args:
-            img_path (str): 图片的本地路径。
+            img (str): 图片的本地路径。
             prompt (str): 提示词。
             max_new_tokens (int): 最大生成长度。
 
@@ -77,13 +125,14 @@ class QwenVLInferencer:
         if max_new_tokens is not None and isinstance(max_new_tokens, int):
             self.response_max_tokens = max_new_tokens
 
+        img = self._preprocess_image(img)
         messages = [
             {
                 "role": "user",
                 "content": [
                     {
                         "type": "image",
-                        "image": img_path},
+                        "image": img},
                     {
                         "type": "text",
                         "text": prompt},
@@ -118,7 +167,7 @@ class QwenVLInferencer:
                     },
                     {
                         "role": "user",
-                        "content": [{"type": "text", "text":self.retry_prompt}]}
+                        "content": [{"type": "text", "text": self.retry_prompt}]}
                 ]
                 output_text_2 = self._generate_output(retry_messages)
                 thinking2, response_2 = self._parse_output(output_text_2)
@@ -256,7 +305,8 @@ if __name__ == "__main__":
     # 2. 设置参数
     image_file = "F:/Picture/pixiv/BA/Shiroko/140776508_p0.png"
     image_file = "D:/Users/Administrator/Desktop/表情包/0B15F0FCBA713F33719AF4AAE371253F.gif"
-    image_file = "D:/Users/Administrator/Desktop/表情包/0eeb09bff8ab32e78c2a0abe90d17d70.mp4"
+    # image_file = "D:/Users/Administrator/Desktop/表情包/0eeb09bff8ab32e78c2a0abe90d17d70.mp4"
+    # image_file = "D:/Users/Administrator/Desktop/表情包/LuoTianYi/下次一定.jpg"
     user_prompt = "请用一个词描述图中动漫人物的表情。"
 
     try:

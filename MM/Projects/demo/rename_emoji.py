@@ -144,5 +144,5 @@ class ImageSemanticRenamer:
 if __name__ == "__main__":
     renamer = ImageSemanticRenamer(model_path="Qwen/Qwen3-VL-4B-Thinking")
     # target_folder = "../../../Datasets/Temp/Emoji"
-    target_folder = "D:/Users/Administrator/Desktop/表情包/LuoTianYi"
+    target_folder = "D:/Users/Administrator/Desktop/表情包/未分类/2"
     renamer.rename_folder(target_folder)
