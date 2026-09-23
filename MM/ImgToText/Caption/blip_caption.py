@@ -56,7 +56,7 @@ class ImageCaptioner:
 if __name__ == "__main__":
     captioner = ImageCaptioner()
     path_Shiroko = "F:/Picture/pixiv/BA/Shiroko/140776508_p0.png"
-    path_Suzuran = "D:/Users/Administrator/Desktop/表情包/71FE2B9B7025D865169A3A38793591C9.jpg"
+    path_Suzuran = "D:/Users/Administrator/Desktop/Emoji/71FE2B9B7025D865169A3A38793591C9.jpg"
     print(f"描述: {captioner.generate_caption(path_Shiroko)}")
     print(f"描述: {captioner.generate_caption(path_Suzuran)}")
     # time_0 = time.time()

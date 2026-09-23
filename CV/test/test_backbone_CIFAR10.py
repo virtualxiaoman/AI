@@ -6,7 +6,7 @@ import torch.optim as optim
 from torchvision import transforms, datasets, models
 from torch.utils.data import DataLoader
 
-from Utils.train_net import NetTrainerFNN
+from Utils.trainer.train_net import NetTrainerFNN
 
 # ---- 超参数 ----
 DATA_ROOT = "../../Datasets/CIFAR10"

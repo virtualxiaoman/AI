@@ -1,13 +1,11 @@
+import subprocess
+import os
 import torch
 
 print("Torch version:", torch.__version__)
 print("Torch cuda version:", torch.version.cuda)
 print("CUDA available:", torch.cuda.is_available())
 print(torch.backends.cudnn.version())
-
-
-import subprocess
-import os
 
 print("=" * 50)
 print("GPU 诊断信息")
@@ -40,3 +38,10 @@ else:
         print(f"直接调用返回的设备数: {count}")
     except Exception as e:
         print(f"直接调用错误: {e}")
+
+x = torch.randn(1000, 1000, device="cuda")
+y = torch.randn(1000, 1000, device="cuda")
+z = x @ y
+
+print(z.device)
+print(torch.cuda.get_device_name(0))

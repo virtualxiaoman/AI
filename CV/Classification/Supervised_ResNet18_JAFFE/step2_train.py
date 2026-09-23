@@ -1,11 +1,10 @@
 import os
-import torch
 import torch.nn as nn
 import torch.optim as optim
 from torchvision import datasets, models, transforms
 from torch.utils.data import DataLoader
 
-from Utils.train_net import NetTrainerFNN
+from Utils.trainer.train_net import NetTrainerFNN
 
 
 def main():

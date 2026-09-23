@@ -7,8 +7,8 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader, Subset
 from torchvision import transforms, datasets, models
 
-from Utils.loss_fn import ArcFaceLoss
-from Utils.train_net import NetTrainerArcFace
+from Utils.losses.loss_fn import ArcFaceLoss
+from Utils.trainer.train_net import NetTrainerArcFace
 
 
 def per_class_split(dataset: datasets.ImageFolder, val_ratio: float = 0.2, seed: int = 42) -> Tuple[list, list]:

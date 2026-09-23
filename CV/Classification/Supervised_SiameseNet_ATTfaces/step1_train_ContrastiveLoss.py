@@ -5,8 +5,8 @@ import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
 from torchvision import models, transforms, datasets
 
-from Utils.train_net import NetTrainerPair
-from Utils.loss_fn import ContrastiveLoss
+from Utils.trainer.train_net import NetTrainerPair
+from Utils.losses.loss_fn import ContrastiveLoss
 
 
 class SiameseDataset(Dataset):

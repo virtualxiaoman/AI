@@ -1,10 +1,9 @@
 # test_mnist_trainer.py
-import torch
 import torch.nn as nn
 import torch.optim as optim
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader
-from Utils.train_net import NetTrainerFNN
+from Utils.trainer.train_net import NetTrainerFNN
 
 
 # 1. 简单的 CNN 定义（适用于 MNIST）

@@ -332,15 +332,22 @@ class NetTrainerFNN:
         if view_params_count:
             # 第一步：计算出总参数量，用于后续计算百分比
             total_count = sum(p.numel() for p in self.net.parameters())
-            current_count = 0
-            # 第二步：使用 named_parameters() 获取名字（name）和参数（p）
-            for name, p in self.net.named_parameters():
-                numel = p.numel()  # 当前这组参数的总量
-                percentage = (numel / total_count) * 100  # 计算占比
-                if view_params_details:
+            if view_params_details:
+                current_count = 0
+                numel = 0
+                # 第二步：使用 named_parameters() 获取名字（name）和参数（p）
+                print(f"{'index':<5} | {'name':<18} | {'shape':<18} | {'params':<10} | {'percentage':>10}")
+                for i, (name, p) in enumerate(self.net.named_parameters(), 1):
+                    numel = p.numel()  # 当前这组参数的总量
+                    percentage = (numel / total_count) * 100  # 计算占比
                     # 这里的 name 会输出类似 "conv1.weight", "conv1.bias" 等
-                    print(f"该层名称: {name:<15} | 形状: {str(list(p.size())):<16} | "
-                          f"参数量: {numel:<8} | 占比: {percentage:>5.2f}%")
+                    print(
+                        f"{i:<5} | "
+                        f"{name:<18} | "
+                        f"{str(list(p.size())):<18} | "
+                        f"{numel:<10} | "
+                        f"{percentage:>7.2f}%"
+                    )
                 current_count += numel
             print(f"网络的总参数量: {total_count}")
         # if view_params_count:

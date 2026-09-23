@@ -76,7 +76,7 @@ class QwenVLInferencer:
             img = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
             print(f"检测到高分辨率图片 ({w}x{h}), 已按比例缩放至 {new_w}x{new_h}")
         # else:
-            # print(f"图片尺寸为 {w}x{h}, 无需缩放。")
+        # print(f"图片尺寸为 {w}x{h}, 无需缩放。")
 
         return img
 
@@ -210,93 +210,7 @@ class QwenVLInferencer:
         )[0]
 
         return output_text
-    # def generate_batch(
-    #         self,
-    #         img_paths: List[str],
-    #         prompt: Union[str, List[str]],
-    #         max_new_tokens: int = 2048,
-    #         repetition_penalty: float = 1.05,
-    #         do_sample: bool = True,
-    #         temperature: float = 0.7,
-    #         top_p: float = 0.9
-    # ) -> List[Tuple[str, str]]:
-    #     """
-    #     批量推理：一次处理多张图片并返回对应 (thinking, response) 列表。
-    #     - img_paths: 本地图片路径列表
-    #     - prompt: 如果是字符串，则对每张图片使用相同 prompt；如果是列表，则长度需等于 img_paths
-    #     """
-    #
-    #     if isinstance(prompt, str):
-    #         prompts = [prompt] * len(img_paths)
-    #     else:
-    #         prompts = list(prompt)
-    #         if len(prompts) != len(img_paths):
-    #             raise ValueError("当 prompt 为列表时，长度必须与 img_paths 相同。")
-    #
-    #     # 构造 messages（batch）
-    #     messages = []
-    #     for img_path, pr in zip(img_paths, prompts):
-    #         messages.append({
-    #             "role": "user",
-    #             "content": [
-    #                 {"type": "image", "image": img_path},
-    #                 {"type": "text", "text": pr}
-    #             ]
-    #         })
-    #
-    #     # 将 batch 转为模型输入张量
-    #     inputs = self.processor.apply_chat_template(
-    #         messages,
-    #         tokenize=True,
-    #         add_generation_prompt=True,
-    #         return_dict=True,
-    #         return_tensors="pt"
-    #     )
-    #
-    #     # 移动到模型设备
-    #     inputs = {k: v.to(self.model.device) if isinstance(v, torch.Tensor) else v for k, v in inputs.items()}
-    #
-    #     # 记录每个样本的 input length（按 attention_mask 计）
-    #     if "attention_mask" in inputs:
-    #         input_lens = inputs["attention_mask"].sum(dim=1).tolist()
-    #     else:
-    #         # 退化情况：使用 input_ids 的长度
-    #         input_lens = [inputs["input_ids"].shape[1]] * len(img_paths)
-    #
-    #     # 推理
-    #     with torch.no_grad():
-    #         generated_ids = self.model.generate(
-    #             **inputs,
-    #             max_new_tokens=max_new_tokens,
-    #             repetition_penalty=repetition_penalty,
-    #             do_sample=do_sample,
-    #             temperature=temperature,
-    #             top_p=top_p,
-    #         )
-    #
-    #     # generated_ids: tensor (batch, seq_len_out)
-    #     # 将每个样本裁剪掉输入部分：用 input_lens
-    #     results = []
-    #     for i in range(generated_ids.shape[0]):
-    #         out_ids = generated_ids[i].tolist()
-    #         in_len = int(input_lens[i])
-    #         # 保护性判断
-    #         if len(out_ids) <= in_len:
-    #             trimmed = out_ids[:]
-    #         else:
-    #             trimmed = out_ids[in_len:]
-    #
-    #         # 解码：注意保留特殊 token 以便解析 <think> 标签
-    #         # 这里使用 processor.batch_decode 接口按单样本解码
-    #         text = self.processor.batch_decode([torch.tensor(trimmed)], skip_special_tokens=False,
-    #                                            clean_up_tokenization_spaces=False)[0]
-    #         thinking, response = self._parse_output(text)
-    #         results.append((thinking, response))
-    #
-    #     return results
 
-
-# --- 使用示例 ---
 
 if __name__ == "__main__":
     # 1. 初始化类 (建议放在全局或初始化位置，避免重复加载模型)
